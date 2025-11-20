@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Gerhana 3D — Revised Camera Switch</title>
+  <title>Gerhana 3D — Final Flipped POV</title>
   <style>
     body, html { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
     canvas { display: block; }
@@ -260,8 +260,9 @@ const INSET_GAP = 12;
 let INSET_W = INSET_W_DEFAULT;
 let INSET_H = INSET_H_DEFAULT;
 
-const earthPOVCam = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000);
-const moonPOVCam  = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000);
+// KEMBALI KE PENAMAAN ASLI: earthPOVCam (kamera di Bumi), moonPOVCam (kamera di Bulan)
+const earthPOVCam = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000); 
+const moonPOVCam  = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000); 
 const insetLabels = document.getElementById("insetLabels");
 
 const earthMask = document.getElementById("earthMask");
@@ -438,17 +439,19 @@ function animate() {
   const showLunarDesired = (now - lunarEclipseLastSeen) < INSET_VISIBLE_DURATION;
 
   // *** LOGIKA PERGANTIAN KAMERA BERDASARKAN KESELARASAN TERDEKAT ***
-  let activeMode = null; // 'solar' atau 'lunar'
+  let activeMode = null; // 'solar' (Bulan di tengah) atau 'lunar' (Bumi di tengah)
 
   // Prioritaskan yang paling dekat dengan keselarasan total (angle paling kecil)
   if (showSolarDesired && solarAngle < lunarAngle) {
+    activeMode = 'solar'; 
+  } 
+  else if (showLunarDesired && lunarAngle < solarAngle) {
     activeMode = 'lunar';
-  } else if (showLunarDesired && lunarAngle < solarAngle) {
-    activeMode = 'solar';
-  } else if (showSolarDesired) {
-    activeMode = 'lunar'; // Fallback jika hanya solar yang dalam rentang waktu
+  } 
+  else if (showSolarDesired) {
+    activeMode = 'solar'; 
   } else if (showLunarDesired) {
-    activeMode = 'solar'; // Fallback jika hanya lunar yang dalam rentang waktu
+    activeMode = 'lunar'; 
   }
   // *** AKHIR LOGIKA PERGANTIAN KAMERA ***
 
@@ -465,40 +468,44 @@ function animate() {
   if (activeMode !== 'solar' && earthMask.style.display !== "none") hideMask(earthMask);
   if (activeMode !== 'lunar' && moonMask.style.display !== "none") hideMask(moonMask);
 
-  // EARTH inset logic (solar)
+  // SOLAR inset logic (Kondisi Gerhana Matahari)
   if (activeMode === 'solar') {
-    // Gerhana Matahari: Kamera di belakang Bumi, menghadap Bulan
+    // KONDISI SOLAR TAPI MENGGUNAKAN KAMERA MOON (POV GERHANA BULAN)
     const distanceMultiply = 6.0;
-    const offset = new THREE.Vector3().subVectors(moon.position, earth.position).normalize().multiplyScalar(distanceMultiply * EARTH_RADIUS * 1.2);
-    earthPOVCam.position.copy(earth.position).add(offset);
-    earthPOVCam.up.set(0,1,0);
-    earthPOVCam.lookAt(moon.position); // face moon
+    const offset = new THREE.Vector3().subVectors(earth.position, moon.position).normalize().multiplyScalar(distanceMultiply * MOON_RADIUS * 1.25);
+    // Menggunakan kamera moonPOVCam (kamera di Bulan)
+    moonPOVCam.position.copy(moon.position).add(offset);
+    moonPOVCam.up.set(0,1,0);
+    moonPOVCam.lookAt(earth.position); 
 
     // estimate time to solar peak
     const seconds = estimateTimeToSolarPeak(timeEarth, timeMoon, 3000);
     const txt = seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`;
-    insetLabels.appendChild(makeLabel("Earth POV → Moon (Lunar Eclipse)", txt, 20));
+    insetLabels.appendChild(makeLabel("Moon POV → Earth (Solar Condition)", txt, 20));
 
     // show mask reveal and render inset
     showMask(earthMask, xRight, yTop, INSET_W, INSET_H);
-    renderInset(earthPOVCam, xRight, yTop, INSET_W, INSET_H);
+    // Render menggunakan moonPOVCam (tampilan Gerhana Bulan)
+    renderInset(moonPOVCam, xRight, yTop, INSET_W, INSET_H); 
   }
 
-  // MOON inset logic (lunar)
+  // LUNAR inset logic (Kondisi Gerhana Bulan)
   if (activeMode === 'lunar') {
-    // Gerhana Bulan: Kamera di belakang Bulan, menghadap Bumi
+    // KONDISI LUNAR TAPI MENGGUNAKAN KAMERA EARTH (POV GERHANA MATAHARI)
     const distanceMultiply = 6.0;
-    const offset = new THREE.Vector3().subVectors(earth.position, moon.position).normalize().multiplyScalar(distanceMultiply * MOON_RADIUS * 1.25);
-    moonPOVCam.position.copy(moon.position).add(offset);
-    moonPOVCam.up.set(0,1,0);
-    moonPOVCam.lookAt(earth.position);
+    const offset = new THREE.Vector3().subVectors(moon.position, earth.position).normalize().multiplyScalar(distanceMultiply * EARTH_RADIUS * 1.2);
+    // Menggunakan kamera earthPOVCam (kamera di Bumi)
+    earthPOVCam.position.copy(earth.position).add(offset);
+    earthPOVCam.up.set(0,1,0);
+    earthPOVCam.lookAt(moon.position); // face moon
 
     const seconds = estimateTimeToLunarPeak(timeEarth, timeMoon, 3000);
     const txt = seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`;
-    insetLabels.appendChild(makeLabel("Moon POV → Earth (Solar Eclipse)", txt, 20));
+    insetLabels.appendChild(makeLabel("Earth POV → Moon (Lunar Condition)", txt, 20));
 
     showMask(moonMask, xRight, yTop, INSET_W, INSET_H);
-    renderInset(moonPOVCam, xRight, yTop, INSET_W, INSET_H);
+    // Render menggunakan earthPOVCam (tampilan Gerhana Matahari)
+    renderInset(earthPOVCam, xRight, yTop, INSET_W, INSET_H);
   }
 }
 
