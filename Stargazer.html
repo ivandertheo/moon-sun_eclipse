@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Gerhana 3D — Realistic Umbra & Penumbra</title>
+  <title>Gerhana 3D — Revised Camera Switch</title>
   <style>
     body, html { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
     canvas { display: block; }
@@ -36,7 +36,7 @@
       background: rgba(0,0,0,0.55);
       color: #fff;
       border-radius: 10px;
-      width: 240px;
+      width: 260px;
       z-index: 999;
       font-family: Arial;
       backdrop-filter: blur(4px);
@@ -50,9 +50,48 @@
 
     #ui input { width: 100%; }
 
+    .inset-label {
+      position: absolute;
+      right: 22px;
+      z-index: 1400;
+      color: #fff;
+      font-family: Arial;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 6px 10px;
+      background: rgba(0,0,0,0.6);
+      border-radius: 6px;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .inset-countdown {
+      font-weight: 900;
+      color: #ffdd57;
+      font-size: 13px;
+    }
+
+    .inset-rec {
+      width:10px; height:10px; background: #ff3b30; border-radius:2px; box-shadow:0 0 6px rgba(255,59,48,0.8);
+    }
+
+    /* overlay masks used for smooth fade - covers the inset area then animates opacity */
+    .inset-mask {
+      position: fixed;
+      pointer-events: none;
+      background: #000;
+      z-index: 1300;
+      opacity: 1;
+      transition: opacity 600ms ease;
+    }
+
+    /* when visible (mask transparent) */
+    .inset-mask.revealed { opacity: 0; }
+
   </style>
 
-  <!-- IMPORT MAP -->
   <script type="importmap">
   {
     "imports": {
@@ -64,46 +103,41 @@
 </head>
 
 <body>
+  <div id="insetLabels" style="position:fixed; right:20px; top:20px; z-index:1400; pointer-events:none;"></div>
 
-<!-- TOP CENTER CONTROLS -->
-<div id="topControls">
-  <button id="btnReverse">⏪ Reverse</button>
-  <button id="btnStop">⏸ Stop</button>
-  <button id="btnPlay">▶ Play</button>
-</div>
+  <div id="earthMask" class="inset-mask" style="display:none"></div>
+  <div id="moonMask" class="inset-mask" style="display:none"></div>
 
-<!-- UI SLIDERS -->
-<div id="ui">
-  <div style="font-weight:600; font-size:16px;">Gerhana — Three.js</div>
+  <div id="topControls">
+    <button id="btnReverse">⏪ Reverse</button>
+    <button id="btnStop">⏸ Stop</button>
+    <button id="btnPlay">▶ Play</button>
+  </div>
 
-  <label>Orbital angle (°): <span id="angleVal">0</span></label>
-  <input id="angle" type="range" min="-30" max="30" step="0.1" value="0">
+  <div id="ui">
+    <div style="font-weight:600; font-size:16px;">Gerhana — Three.js</div>
 
-  <label>Moon distance: <span id="distVal">2.0</span></label>
-  <input id="moonDist" type="range" min="1.3" max="3.2" step="0.01" value="2.0">
+    <label>Orbital angle (°): <span id="angleVal">0</span></label>
+    <input id="angle" type="range" min="-30" max="30" step="0.1" value="0">
 
-  <label>Speed: <span id="speedVal">1</span></label>
-  <input id="speed" type="range" min="0" max="2" step="0.01" value="1">
+    <label>Moon distance: <span id="distVal">2.0</span></label>
+    <input id="moonDist" type="range" min="1.3" max="3.2" step="0.01" value="2.0">
 
-  <button id="reset">Reset</button>
-</div>
+    <label>Speed: <span id="speedVal">1</span></label>
+    <input id="speed" type="range" min="0" max="2" step="0.01" value="1">
 
-
+    <button id="reset">Reset</button>
+  </div>
 
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-/* === SCENE SETUP === */
+/* ---------------- SCENE SETUP ---------------- */
 const scene = new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(
-  65,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  2000
-);
-camera.position.set(10, 6, 14);
+const mainCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 4000);
+mainCamera.position.set(10, 6, 14);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -111,92 +145,81 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(mainCamera, renderer.domElement);
 controls.enableDamping = true;
 
-/* === TEXTURES === */
+/* ---------------- TEXTURES ---------------- */
 const loader = new THREE.TextureLoader();
 const sunTex = loader.load("models/sunTex.png");
 const earthTex = loader.load("models/earthTex.png");
 const moonTex = loader.load("models/moonTex.png");
 
-/* === SUN === */
+/* ---------------- OBJECTS ---------------- */
+const EARTH_RADIUS = 1.0;
+const MOON_RADIUS  = 0.4;
+const SUN_RADIUS   = 2.0;
+
 const sun = new THREE.Mesh(
-  new THREE.SphereGeometry(2, 64, 64),
+  new THREE.SphereGeometry(SUN_RADIUS, 64, 64),
   new THREE.MeshBasicMaterial({ map: sunTex })
 );
 sun.position.set(0, 0, 0);
 scene.add(sun);
 
-/* === REAL SUN LIGHT (Directional parallel rays) === */
+/* directional sunlight */
 const sunlight = new THREE.DirectionalLight(0xffffff, 2.2);
-sunlight.position.set(0, 0, 0);  // source center
 sunlight.castShadow = true;
-
-sunlight.shadow.mapSize.width = 4096;
-sunlight.shadow.mapSize.height = 4096;
-sunlight.shadow.camera.near = 1;
-sunlight.shadow.camera.far = 200;
-sunlight.shadow.radius = 5; // penumbra softness
-
+sunlight.shadow.mapSize.width = 2048;
+sunlight.shadow.mapSize.height = 2048;
+sunlight.shadow.camera.near = 0.5;
+sunlight.shadow.camera.far = 2000;
+sunlight.shadow.radius = 6;
 scene.add(sunlight);
+sunlight.target = new THREE.Object3D();
+scene.add(sunlight.target);
 
-/* === EARTH === */
+/* Earth */
 const earth = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 64, 64),
+  new THREE.SphereGeometry(EARTH_RADIUS, 64, 64),
   new THREE.MeshStandardMaterial({ map: earthTex })
 );
 earth.castShadow = true;
 earth.receiveShadow = true;
 scene.add(earth);
 
-/* === MOON === */
+/* Moon */
 const moon = new THREE.Mesh(
-  new THREE.SphereGeometry(0.4, 64, 64),
+  new THREE.SphereGeometry(MOON_RADIUS, 64, 64),
   new THREE.MeshStandardMaterial({ map: moonTex })
 );
 moon.castShadow = true;
 moon.receiveShadow = true;
 scene.add(moon);
 
-/* Earth receives moon shadow (solar eclipse) */
-earth.receiveShadow = true;
-/* Moon receives earth shadow (lunar eclipse) */
-moon.receiveShadow = true;
-
-/* sunlight target dynamically updated */
-sunlight.target = earth;
-
-/* === STARS TWINKLE === */
+/* ---------------- STARS (twinkle) ---------------- */
 const starGeo = new THREE.BufferGeometry();
-const starCount = 2000;
+const starCount = 2500;
 const starPositions = new Float32Array(starCount * 3);
-const starOpacities = new Float32Array(starCount);
-
 for (let i = 0; i < starCount; i++) {
-  starPositions[i*3+0] = (Math.random()-0.5) * 500;
-  starPositions[i*3+1] = (Math.random()-0.5) * 500;
-  starPositions[i*3+2] = (Math.random()-0.5) * 500;
-  starOpacities[i] = Math.random();
+  starPositions[i*3+0] = (Math.random()-0.5) * 1000;
+  starPositions[i*3+1] = (Math.random()-0.5) * 1000;
+  starPositions[i*3+2] = (Math.random()-0.5) * 1000;
 }
-
 starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
-starGeo.setAttribute("alpha", new THREE.BufferAttribute(starOpacities, 1));
 
 const starMat = new THREE.PointsMaterial({
   color: 0xffffff,
-  size: 1,
+  size: 1.2,
   transparent: true,
-  opacity: 0.8,
+  opacity: 0.85,
   depthWrite: false
 });
-
 const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
-/* === ANIMATION VARIABLES === */
+/* ---------------- ANIMATION VARIABLES ---------------- */
 let baseEarth = 0.0004;
-let baseMoon  = 0.003;
+let baseMoon  = 0.0032;
 
 let timeEarth = 0;
 let timeMoon  = 0;
@@ -207,7 +230,7 @@ let direction = 1;
 let angleDeg = 0;
 let moonDist = 2;
 
-/* === SLIDER HANDLER === */
+/* sliders + controls */
 const angleSlider = document.getElementById("angle");
 const distSlider  = document.getElementById("moonDist");
 const speedSlider = document.getElementById("speed");
@@ -215,86 +238,276 @@ const angleVal = document.getElementById("angleVal");
 const distVal  = document.getElementById("distVal");
 const speedVal = document.getElementById("speedVal");
 
-angleSlider.oninput = () => {
-  angleDeg = parseFloat(angleSlider.value);
-  angleVal.innerText = angleDeg;
-};
-distSlider.oninput = () => {
-  moonDist = parseFloat(distSlider.value);
-  distVal.innerText = moonDist.toFixed(2);
-};
-speedSlider.oninput = () => {
-  speedFactor = parseFloat(speedSlider.value);
-  speedVal.innerText = speedFactor;
-};
+angleSlider.oninput = () => { angleDeg = parseFloat(angleSlider.value); angleVal.innerText = angleDeg.toFixed(1); };
+distSlider.oninput  = () => { moonDist = parseFloat(distSlider.value); distVal.innerText = moonDist.toFixed(2); };
+speedSlider.oninput = () => { speedFactor = parseFloat(speedSlider.value); speedVal.innerText = speedFactor.toFixed(2); };
 
-/* === TOP BUTTONS === */
 document.getElementById("btnPlay").onclick = () => direction = 1;
 document.getElementById("btnStop").onclick = () => direction = 0;
 document.getElementById("btnReverse").onclick = () => direction = -1;
 
-/* === RESET === */
 document.getElementById("reset").onclick = () => {
-  angleSlider.value = 0;
-  distSlider.value = 2;
-  speedSlider.value = 1;
-
-  angleDeg = 0;
-  moonDist = 2;
-  speedFactor = 1;
-  direction = 1;
-
-  angleVal.innerText = "0";
-  distVal.innerText = "2.0";
-  speedVal.innerText = "1";
+  angleSlider.value = 0; distSlider.value = 2; speedSlider.value = 1;
+  angleDeg = 0; moonDist = 2; speedFactor = 1; direction = 1;
+  angleVal.innerText = "0"; distVal.innerText = "2.0"; speedVal.innerText = "1";
 };
 
-/* === ANIMATE === */
+/* ---------------- INSET CAMERAS ---------------- */
+const INSET_W_DEFAULT = 540;
+const INSET_H_DEFAULT = 380;
+const INSET_MARGIN = 18;
+const INSET_GAP = 12;
+let INSET_W = INSET_W_DEFAULT;
+let INSET_H = INSET_H_DEFAULT;
+
+const earthPOVCam = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000);
+const moonPOVCam  = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000);
+const insetLabels = document.getElementById("insetLabels");
+
+const earthMask = document.getElementById("earthMask");
+const moonMask  = document.getElementById("moonMask");
+
+/* helper label creation */
+function makeLabel(text, countdownText, topPx) {
+  const el = document.createElement("div");
+  el.className = "inset-label";
+  el.style.top = `${topPx}px`;
+  el.style.right = `${INSET_MARGIN}px`;
+  el.innerHTML = `<span class="inset-rec"></span><span>${text}</span><span class="inset-countdown">${countdownText}</span>`;
+  return el;
+}
+
+/* ---------------- ECLIPSE DETECTION (tuned) ---------------- */
+const SOLAR_ANGLE_THRESHOLD = 0.15;
+const LUNAR_ANGLE_THRESHOLD = 0.16;
+const LINE_DISTANCE_THRESHOLD = 1.4;
+
+/* History timers for showing inset before/during/after */
+let solarEclipseLastSeen = -Infinity;
+let lunarEclipseLastSeen = -Infinity;
+const INSET_VISIBLE_DURATION = 4000; // ms to keep showing after alignment passes
+const INSET_APPROACH_MULT = 2.0; // show earlier using multiplier
+
+function detectEclipses() {
+  const vEtoS = new THREE.Vector3().subVectors(sun.position, earth.position).normalize();
+  const vEtoM = new THREE.Vector3().subVectors(moon.position, earth.position).normalize();
+  const solarAngle = vEtoS.angleTo(vEtoM);
+
+  const vMtoS = new THREE.Vector3().subVectors(sun.position, moon.position).normalize();
+  const vMtoE = new THREE.Vector3().subVectors(earth.position, moon.position).normalize();
+  const lunarAngle = vMtoS.angleTo(vMtoE);
+
+  // perpendicular distance from Moon to Sun-Earth line
+  const sunToEarth = new THREE.Vector3().subVectors(earth.position, sun.position);
+  const sunToMoon  = new THREE.Vector3().subVectors(moon.position, sun.position);
+  const proj = sunToMoon.clone().projectOnVector(sunToEarth);
+  const perp = sunToMoon.clone().sub(proj);
+  const lineDistance = perp.length();
+
+  const solarImminent = (solarAngle < SOLAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT) || (lineDistance < LINE_DISTANCE_THRESHOLD);
+  const lunarImminent = (lunarAngle < LUNAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT) || (lineDistance < (LINE_DISTANCE_THRESHOLD * 1.2));
+
+  return { solarImminent, lunarImminent, solarAngle, lunarAngle, lineDistance };
+}
+
+/* ---------------- ESTIMATE TIME-TO-PEAK ---------------- */
+function estimateTimeToSolarPeak(simE, simM, horizonFrames = 3000) {
+  let tE = simE, tM = simM;
+  const dtE = baseEarth * speedFactor * Math.sign(direction || 1);
+  const dtM = baseMoon  * speedFactor * Math.sign(direction || 1);
+  let minAng = Infinity, minFrame = 0;
+  for (let f=0; f<horizonFrames; f++) {
+    const fe = new THREE.Vector3(Math.cos(tE)*6, 0, Math.sin(tE)*6);
+    const fm = new THREE.Vector3(fe.x + Math.cos(tM)*moonDist, fe.y, fe.z + Math.sin(tM)*moonDist);
+    const v1 = new THREE.Vector3().subVectors(sun.position, fe).normalize();
+    const v2 = new THREE.Vector3().subVectors(fm, fe).normalize();
+    const ang = v1.angleTo(v2);
+    if (ang < minAng) { minAng = ang; minFrame = f; }
+    tE += dtE; tM += dtM;
+  }
+  return minFrame / 60;
+}
+function estimateTimeToLunarPeak(simE, simM, horizonFrames = 3000) {
+  let tE = simE, tM = simM;
+  const dtE = baseEarth * speedFactor * Math.sign(direction || 1);
+  const dtM = baseMoon  * speedFactor * Math.sign(direction || 1);
+  let minAng = Infinity, minFrame = 0;
+  for (let f=0; f<horizonFrames; f++) {
+    const fe = new THREE.Vector3(Math.cos(tE)*6, 0, Math.sin(tE)*6);
+    const fm = new THREE.Vector3(fe.x + Math.cos(tM)*moonDist, fe.y, fe.z + Math.sin(tM)*moonDist);
+    const v1 = new THREE.Vector3().subVectors(sun.position, fm).normalize();
+    const v2 = new THREE.Vector3().subVectors(fe, fm).normalize();
+    const ang = v1.angleTo(v2);
+    if (ang < minAng) { minAng = ang; minFrame = f; }
+    tE += dtE; tM += dtM;
+  }
+  return minFrame / 60;
+}
+
+/* ---------------- MASK HELPERS (overlay fade) ---------------- */
+const FADE_MS = 600;
+
+function showMask(maskEl, x, y, w, h) {
+  maskEl.style.left = x + "px";
+  maskEl.style.top = y + "px";
+  maskEl.style.width = w + "px";
+  maskEl.style.height = h + "px";
+  maskEl.style.display = "block";
+  // start covered (opacity 1), then reveal by flipping class to 'revealed' -> opacity 0
+  // ensure initial state is covered
+  maskEl.classList.remove("revealed");
+  // force reflow then reveal
+  requestAnimationFrame(() => {
+    maskEl.classList.add("revealed");
+  });
+}
+
+function hideMask(maskEl) {
+  // start reveal removal: set opacity to 1 by removing 'revealed'
+  maskEl.classList.remove("revealed");
+  // after transition, set display none
+  setTimeout(() => {
+    maskEl.style.display = "none";
+  }, FADE_MS + 20);
+}
+
+/* ---------------- RENDER INSET ---------------- */
+function renderInset(camera, x, y, w, h) {
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setViewport(x, y, w, h);
+  renderer.setScissor(x, y, w, h);
+  renderer.setScissorTest(true);
+  renderer.render(scene, camera);
+  renderer.setScissorTest(false);
+}
+
+/* ---------------- MAIN LOOP ---------------- */
 function animate() {
   requestAnimationFrame(animate);
 
+  // update simulation time
   timeEarth += baseEarth * speedFactor * direction;
   timeMoon  += baseMoon  * speedFactor * direction;
 
-  const t = timeEarth;
-  const m = timeMoon;
+  const t = timeEarth, m = timeMoon;
+  const tilt = angleDeg * Math.PI / 180;
 
-  const angle = angleDeg * Math.PI / 180;
+  // earth position (with tilt in y)
+  earth.position.set(Math.cos(t) * 6, Math.sin(tilt) * 1.2, Math.sin(t) * 6);
 
-  /* === EARTH ORBIT === */
-  earth.position.set(
-    Math.cos(t) * 6,
-    Math.sin(angle) * 1.2,
-    Math.sin(t) * 6
-  );
-
-  /* === MOON ORBIT === */
+  // moon orbit
   moon.position.set(
     earth.position.x + Math.cos(m) * moonDist,
-    earth.position.y + Math.sin(angle) * 0.5,
+    earth.position.y + Math.sin(tilt) * 0.5,
     earth.position.z + Math.sin(m) * moonDist
   );
 
-  /* === REALISTIC SHADOW DIRECTION === */
+  // sunlight aim
   sunlight.target.position.copy(earth.position);
+  sunlight.position.copy(sun.position).add(new THREE.Vector3(0.0001, 0.0001, 0.0001));
 
-  /* === STAR TWINKLE === */
-  const tStar = Date.now() * 0.002;
+  // stars twinkle
+  const tStar = Date.now() * 0.0021;
   starMat.opacity = 0.7 + Math.sin(tStar) * 0.25;
 
+  // rotations
   earth.rotation.y += 0.01;
   moon.rotation.y += 0.014;
 
   controls.update();
-  renderer.render(scene, camera);
+
+  // MAIN render
+  renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+  renderer.setScissor(0, 0, window.innerWidth, window.innerHeight);
+  renderer.setScissorTest(true);
+  renderer.render(scene, mainCamera);
+  renderer.setScissorTest(false);
+
+  // detect eclipses
+  const { solarImminent, lunarImminent, solarAngle, lunarAngle, lineDistance } = detectEclipses();
+
+  const now = performance.now();
+  // Update last-seen times when approaching
+  const approachSolar = solarAngle < SOLAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT || lineDistance < LINE_DISTANCE_THRESHOLD;
+  const approachLunar = lunarAngle < LUNAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT || lineDistance < (LINE_DISTANCE_THRESHOLD * 1.2);
+  if (approachSolar) solarEclipseLastSeen = now;
+  if (approachLunar) lunarEclipseLastSeen = now;
+
+  const showSolarDesired = (now - solarEclipseLastSeen) < INSET_VISIBLE_DURATION;
+  const showLunarDesired = (now - lunarEclipseLastSeen) < INSET_VISIBLE_DURATION;
+
+  // *** LOGIKA PERGANTIAN KAMERA BERDASARKAN KESELARASAN TERDEKAT ***
+  let activeMode = null; // 'solar' atau 'lunar'
+
+  // Prioritaskan yang paling dekat dengan keselarasan total (angle paling kecil)
+  if (showSolarDesired && solarAngle < lunarAngle) {
+    activeMode = 'lunar';
+  } else if (showLunarDesired && lunarAngle < solarAngle) {
+    activeMode = 'solar';
+  } else if (showSolarDesired) {
+    activeMode = 'lunar'; // Fallback jika hanya solar yang dalam rentang waktu
+  } else if (showLunarDesired) {
+    activeMode = 'solar'; // Fallback jika hanya lunar yang dalam rentang waktu
+  }
+  // *** AKHIR LOGIKA PERGANTIAN KAMERA ***
+
+  // compute inset area
+  INSET_W = Math.min(INSET_W_DEFAULT, Math.floor(window.innerWidth * 0.52));
+  INSET_H = Math.min(INSET_H_DEFAULT, Math.floor(window.innerHeight * 0.44));
+  const xRight = window.innerWidth - INSET_W - INSET_MARGIN;
+  const yTop = window.innerHeight - INSET_H - INSET_MARGIN;
+
+  // clear labels
+  insetLabels.innerHTML = "";
+
+  // Sembunyikan semua mask yang TIDAK aktif saat ini
+  if (activeMode !== 'solar' && earthMask.style.display !== "none") hideMask(earthMask);
+  if (activeMode !== 'lunar' && moonMask.style.display !== "none") hideMask(moonMask);
+
+  // EARTH inset logic (solar)
+  if (activeMode === 'solar') {
+    // Gerhana Matahari: Kamera di belakang Bumi, menghadap Bulan
+    const distanceMultiply = 6.0;
+    const offset = new THREE.Vector3().subVectors(moon.position, earth.position).normalize().multiplyScalar(distanceMultiply * EARTH_RADIUS * 1.2);
+    earthPOVCam.position.copy(earth.position).add(offset);
+    earthPOVCam.up.set(0,1,0);
+    earthPOVCam.lookAt(moon.position); // face moon
+
+    // estimate time to solar peak
+    const seconds = estimateTimeToSolarPeak(timeEarth, timeMoon, 3000);
+    const txt = seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`;
+    insetLabels.appendChild(makeLabel("Earth POV → Moon (Lunar Eclipse)", txt, 20));
+
+    // show mask reveal and render inset
+    showMask(earthMask, xRight, yTop, INSET_W, INSET_H);
+    renderInset(earthPOVCam, xRight, yTop, INSET_W, INSET_H);
+  }
+
+  // MOON inset logic (lunar)
+  if (activeMode === 'lunar') {
+    // Gerhana Bulan: Kamera di belakang Bulan, menghadap Bumi
+    const distanceMultiply = 6.0;
+    const offset = new THREE.Vector3().subVectors(earth.position, moon.position).normalize().multiplyScalar(distanceMultiply * MOON_RADIUS * 1.25);
+    moonPOVCam.position.copy(moon.position).add(offset);
+    moonPOVCam.up.set(0,1,0);
+    moonPOVCam.lookAt(earth.position);
+
+    const seconds = estimateTimeToLunarPeak(timeEarth, timeMoon, 3000);
+    const txt = seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`;
+    insetLabels.appendChild(makeLabel("Moon POV → Earth (Solar Eclipse)", txt, 20));
+
+    showMask(moonMask, xRight, yTop, INSET_W, INSET_H);
+    renderInset(moonPOVCam, xRight, yTop, INSET_W, INSET_H);
+  }
 }
 
 animate();
 
-/* === RESIZE === */
+/* ---------------- RESIZE ---------------- */
 window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+  mainCamera.aspect = window.innerWidth / window.innerHeight;
+  mainCamera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
