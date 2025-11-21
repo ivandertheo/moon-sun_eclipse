@@ -154,6 +154,9 @@
  <label>Orbital angle (°): <span id="angleVal">0</span></label>
  <input id="angle" type="range" min="-30" max="30" step="0.1" value="0">
 
+ <label>Earth distance: <span id="earthVal">10.0</span></label>
+ <input id = "earthDist" type = "range" min ="1.0" max ="13.0" step = "0.01" value = "10.0">
+
  <label>Moon distance: <span id="distVal">2.0</span></label>
  <input id="moonDist" type="range" min="1.3" max="3.2" step="0.01" value="2.0">
 
@@ -283,9 +286,13 @@ let isAutoStopped = false;
 let angleDeg = 0;
 let moonDist = 2;
 
+let earthDist = 10;
+
 /* sliders + controls */
 const angleSlider = document.getElementById("angle");
 const distSlider = document.getElementById("moonDist");
+const earthSlider = document.getElementById("earthDist");
+const earthVal = document.getElementById("earthVal");
 const speedSlider = document.getElementById("speed");
 const angleVal = document.getElementById("angleVal");
 const distVal = document.getElementById("distVal");
@@ -293,6 +300,7 @@ const speedVal = document.getElementById("speedVal");
 
 angleSlider.oninput = () => { angleDeg = parseFloat(angleSlider.value); angleVal.innerText = angleDeg.toFixed(1); };
 distSlider.oninput = () => { moonDist = parseFloat(distSlider.value); distVal.innerText = moonDist.toFixed(2); };
+earthSlider.oninput = () => {earthDist = parseFloat(earthSlider.value); earthVal.innerText = earthDist.toFixed(2);};
 
 // Diperbarui: Speed slider sekarang hanya mengubah nilai slider, tidak memengaruhi speedFactor secara langsung
 // speedFactor akan diatur di dalam loop animate berdasarkan `direction`
@@ -333,9 +341,9 @@ document.getElementById("btnReverse").onclick = () => {
 };
 
 document.getElementById("reset").onclick = () => {
-angleSlider.value = 0; distSlider.value = 2; speedSlider.value = 1;
-angleDeg = 0; moonDist = 2; speedFactor = 1; direction = 1;
-angleVal.innerText = "0"; distVal.innerText = "2.0"; speedVal.innerText = "1";
+angleSlider.value = 0; distSlider.value = 2; speedSlider.value = 1; earthSlider.value = 10
+angleDeg = 0; moonDist = 2; speedFactor = 1; direction = 1; earthDist = 10;
+angleVal.innerText = "0"; distVal.innerText = "2.0"; speedVal.innerText = "1"; earthVal.innerText = "10.0";
 };
 
 /* ---------------- INSET CAMERAS & ECLIPSE LOGIC ---------------- */
@@ -375,9 +383,9 @@ const LUNAR_ANGLE_THRESHOLD = 0.16;
 const LINE_DISTANCE_THRESHOLD = 1.4;
 
 // Threshold untuk Gerhana PENUH (lebih kecil)
-const FULL_ECLIPSE_SOLAR_THRESHOLD = 0.01; 
-const FULL_ECLIPSE_LUNAR_THRESHOLD = 0.01; 
-const FULL_ECLIPSE_DISTANCE_THRESHOLD = 0.05; // Jarak mendekati 0 untuk kesejajaran sempurna
+const FULL_ECLIPSE_SOLAR_THRESHOLD = 0.001; 
+const FULL_ECLIPSE_LUNAR_THRESHOLD = 0.001; 
+const FULL_ECLIPSE_DISTANCE_THRESHOLD = 0.005; // Jarak mendekati 0 untuk kesejajaran sempurna
 
 let solarEclipseLastSeen = -Infinity;
 let lunarEclipseLastSeen = -Infinity;
@@ -540,7 +548,7 @@ const t = timeEarth, m = timeMoon;
 const tilt = angleDeg * Math.PI / 180;
 
 // earth position
-earth.position.set(Math.cos(t) * 6, Math.sin(tilt) * 1.2, Math.sin(t) * 6);
+earth.position.set(Math.cos(t) * earthDist, Math.sin(tilt) * 1.2, Math.sin(t) * earthDist);
 
 // moon orbit
 moon.position.set(
