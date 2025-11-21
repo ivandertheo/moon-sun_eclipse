@@ -83,7 +83,7 @@
  position: fixed;
  pointer-events: none;
  background-color:transparent;
- border: 1px solid white; 
+ border: 2px solid white; 
  z-index: 1300;
  opacity: 1;
  transition: opacity 600ms ease;
@@ -200,6 +200,14 @@ new THREE.MeshBasicMaterial({ map: sunTex })
 );
 sun.position.set(0, 0, 0);
 scene.add(sun);
+//tektur gerhana matahari total
+const originalSunMaterial = sun.material;
+const redSunMaterial = new THREE.MeshStandardMaterial({
+    map: sunTex, 
+    color: new THREE.Color(0xff4444), 
+    emissive: new THREE.Color(0x880000), 
+    emissiveIntensity: 0.8
+});
 
 /* directional sunlight */
 const sunlight = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -231,7 +239,7 @@ moon.castShadow = true;
 moon.receiveShadow = true;
 scene.add(moon);
 const originalMoonMaterial = moon.material;
-//tektur gerhana bulan
+//tektur gerhana bulan total
 const redMoonMaterial = new THREE.MeshStandardMaterial({
     map: moonTex, 
     color: new THREE.Color(0xff4444), 
@@ -270,6 +278,7 @@ let timeMoon = 0;
 let speedFactor = 1;      
 let userSpeedFactor = 1;  
 let direction = 1;
+let isAutoStopped = false;
 
 let angleDeg = 0;
 let moonDist = 2;
@@ -300,6 +309,7 @@ speedSlider.oninput = () => {
 // Diperbarui: Saat tombol Play/Stop/Reverse ditekan, atur `direction` dan pastikan `speedFactor` (yang diwakili oleh slider) diset ulang ke nilai aslinya jika sebelumnya 0 (dihentikan oleh gerhana)
 document.getElementById("btnPlay").onclick = () => { 
   direction = 1;
+  isAutoStopped = false;
   // Jika speedFactor adalah 0 (karena auto-stop), kembalikan ke kecepatan pengguna
   if(speedFactor === 0) {
     speedFactor = userSpeedFactor; 
@@ -309,9 +319,11 @@ document.getElementById("btnPlay").onclick = () => {
 };
 document.getElementById("btnStop").onclick = () => {
     direction = 0;
+    isAutoStopped = false;
 };
 document.getElementById("btnReverse").onclick = () => {
   direction = -1;
+  isAutoStopped = false;
   // Jika speedFactor adalah 0 (karena auto-stop), kembalikan ke kecepatan pengguna
   if(speedFactor === 0) {
     speedFactor = userSpeedFactor;
@@ -603,7 +615,15 @@ insetLabels.style.right = 'auto';
 
 // LOGIKA STOP GERHANA
 let shouldStop = (activeMode === 'solar' && solarFull) || (activeMode === 'lunar' && lunarFull);
-
+if (shouldStop && direction !== 0) {
+ 
+  direction = 0;
+  speedFactor = 0;
+  isAutoStopped = true; 
+  
+  speedSlider.value = 0;
+  speedVal.innerText = "0.00";
+}
 // Jika gerhana penuh terdeteksi dan animasi sedang berjalan
 if (shouldStop && direction !== 0) {
  
@@ -628,15 +648,22 @@ if (activeMode === 'solar') {
  earthFrontPOVCam.lookAt(earth.position);
 
  const seconds = estimateTimeToSolarPeak(timeEarth, timeMoon, 3000);
- const txt = direction === 0 ? "ECLIPSE MAX!" : (seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`);
+ const txt = isAutoStopped ? "ECLIPSE MAX!" : (seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`);
  insetLabels.appendChild(makeLabel("Earth POV facing Sun (Solar Condition)", txt, 2));
 
  // Tampilkan mask dan render
  showMask(mainInsetMask, xRight, yTop, INSET_W, INSET_H);
  renderInset(earthFrontPOVCam, xRight, yTop, INSET_W, INSET_H);
 
+ //tekstur gerhana bulan total
+ if (direction === 0 && lunarFull) { 
+    sun.material = redSunMaterial;
+ } else {
+    sun.material = originalSunMaterial;
+ }
+
  // ANOTASI HANYA MUNCUL JIKA ANIMASI BERHENTI (Gerhana Penuh)
- if (direction === 0) {
+ if (isAutoStopped) {
   // Anotasi 1: Umbra Bayangan Bumi (Menunjuk ke bagian tengah Bumi)
   createAnnotation(10, 10,
    '<b>Moon Disk</b>: Bulan menutupi Matahari.<br>Terjadi totalitas.',
@@ -646,25 +673,28 @@ if (activeMode === 'solar') {
   createAnnotation(INSET_W - 220, INSET_H - 70,
    '<b>Solar Corona</b>: Atmosfer luar Matahari.<br>Terlihat saat gerhana penuh.',
    INSET_W * 0.6, INSET_H * 0.65);
+ } else {
+  if (sun.material !== originalSunMaterial) {
+        sun.material = originalSunMaterial;
+    }
  }
 }
 
-// LUNAR inset logic (Gerhana Matahari - POV Bumi melihat Bulan)
 else if (activeMode === 'lunar') {
- // POV BUMI melihat Bulan (Gerhana Matahari)
  const distanceMultiply = 6.0;
  const offset = new THREE.Vector3().subVectors(earth.position, moon.position).normalize().multiplyScalar(distanceMultiply * MOON_RADIUS * 1.25);
  earthBackPOVCam.position.copy(moon.position).add(offset);
  earthBackPOVCam.up.set(0,1,0);
- earthBackPOVCam.lookAt(earth.position); // face moon
+ earthBackPOVCam.lookAt(earth.position); 
 
  const seconds = estimateTimeToLunarPeak(timeEarth, timeMoon, 3000);
- const txt = direction === 0 ? "ECLIPSE MAX!" : (seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`);
+ const txt = isAutoStopped ? "ECLIPSE MAX!" : (seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`);
  insetLabels.appendChild(makeLabel("Earth POV facing moon (Lunar Condition)", txt, 2));
 
  // Tampilkan mask dan render
  showMask(mainInsetMask, xRight, yTop, INSET_W, INSET_H);
  renderInset(earthBackPOVCam, xRight, yTop, INSET_W, INSET_H);
+ 
 
  //tekstur gerhana bulan total
  if (direction === 0 && lunarFull) { 
@@ -674,15 +704,15 @@ else if (activeMode === 'lunar') {
  }
 
  // ANOTASI HANYA MUNCUL JIKA ANIMASI BERHENTI (Gerhana Penuh)
- if (direction === 0) {
+ if (isAutoStopped) {
   // Anotasi 1: Bulan (Menunjuk ke cakram gelap di tengah)
-  createAnnotation(10, 10,
-   '<b>Umbra</b>: Bayangan inti Bumi.<br>Bulan masuk total.',
+  createAnnotation(20, 30,
+   '<b>Umbra</b>: Bayangan terdalam dan tergelap dari Bumi. Di sini,<br> Bulan benar-benar terhalang dari Matahari langsung.',
    INSET_W * 0.5, INSET_H * 0.5);
 
   // Anotasi 2: Korona (Menunjuk ke tepi luar cahaya)
   createAnnotation(INSET_W - 220, INSET_H - 70,
-   '<b>Penumbra</b>: Bayangan parsial.<br>Bulan tampak kemerahan.',
+   '<b>Penumbra</b>: Bayangan luar Bumi yang kabur. <br> Bulan di sini masih menerima sebagian cahaya Matahari.',
    INSET_W * 0.596, INSET_H * 0.5);
  }
 } else {
